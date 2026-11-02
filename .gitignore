@@ -1,0 +1,7 @@
+.RData
+.Rhistory
+.Rproj.user/
+*.Rda
+*.html
+*.pdf
+.DS_Store

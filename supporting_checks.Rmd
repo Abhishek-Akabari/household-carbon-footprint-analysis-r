@@ -1,0 +1,239 @@
+---
+title: "Household Carbon Footprint Analysis: supporting checks"
+author: "Abhishek Akabari"
+---
+
+
+
+```{r}
+library(stringr)
+library(ggplot2)
+library(dplyr)
+```
+
+
+# 1. Organise and clean the data
+
+## 1.1 Subset the data into the specific dataset allocated
+  
+
+```{r}
+# Only change the value for SID 
+# Assign your student id into the variable SID, for example:
+SID <- 2523424                 # This is an example, replace 2101234 with your actual ID
+SIDoffset <- (SID %% 50) + 1    # Your SID mod 50 + 1
+
+load("carbon-footprint.Rda")
+# Now subset the survey data set
+# Pick every 50th observation starting from your offset
+# Put into your data frame named mydf (you can rename it)
+mydf <- df[seq(from=SIDoffset,to=nrow(df),by=50),]
+
+
+head(mydf)
+str(mydf)
+summary(mydf)
+any(duplicated(mydf))
+
+```
+
+
+## 1.2 Data quality plan
+ 
+
+
+## 1.3 Data quality analysis findings
+
+```{r}
+# Logical consistency checks
+sum(mydf$number_adults == 0)
+mydf[mydf$number_adults == 0, ]
+
+```
+total 20 entrys of 0 number_adults
+
+```{r}
+# Range checks according to metadata 
+mydf[mydf$annual_energy_consumption < 1000, ]
+mydf[mydf$annual_energy_consumption > 9000, ]
+summary(mydf$annual_energy_consumption)
+
+```
+4 values are out of range according to metadata 
+
+```{r}
+# Missing values in dataset  
+colSums(is.na(mydf))
+
+```
+income have 22 missing values 
+
+```{r}
+# Categorical consistency
+table(mydf$diet_type)
+table(mydf$home_type)
+
+```
+home_type have spelling mistakes.
+
+ 
+## 1.4 Data cleaning  
+ 
+```{r}
+# Verify Issue 1 removed
+sum(mydf_clean$number_adults == 0)
+
+# Verify Issue 2 removed
+min(mydf_clean$annual_energy_consumption, na.rm = TRUE)
+
+# Verify Issue 3 fixed
+table(mydf_clean$home_type)
+
+
+```
+
+
+
+# 2. Exploratory Data Analysis (EDA)
+
+```{r}
+summary(mydf_clean$carbon_footprint)
+summary(mydf_clean$annual_energy_consumption)
+summary(mydf_clean$number_adults)
+
+```
+
+
+###Element 1: 
+```{r}
+hist(mydf_clean$carbon_footprint,
+     main = "Distribution of Carbon Footprint",
+     xlab = "Carbon Footprint")
+```
+
+```{r}
+boxplot(mydf_clean$carbon_footprint)
+
+```
+
+###Element 2:
+```{r}
+plot(mydf_clean$annual_energy_consumption,
+     mydf_clean$carbon_footprint,
+     xlab = "Annual Energy Consumption",
+     ylab = "Carbon Footprint")
+
+```
+
+```{r}
+cor(mydf_clean$annual_energy_consumption,
+    mydf_clean$carbon_footprint,
+    use = "complete.obs")
+
+```
+
+###Element 3:
+
+```{r}
+boxplot(carbon_footprint ~ home_type,
+        data = mydf_clean,
+        xlab = "Home Type",
+        ylab = "Carbon Footprint")
+
+```
+
+```{r}
+aggregate(carbon_footprint ~ home_type,
+          data = mydf_clean,
+          summary)
+
+```
+
+```{r}
+mosaicplot(table(mydf_clean$home_type,
+                 mydf_clean$recycles_regularly),
+           xlab = "Home Type",
+           ylab = "Recycles Regularly",
+           main = "Recycling behaviour by home type",
+           col = c("lightgrey", "lightblue"))
+
+```
+
+
+
+# 3. Modelling
+
+# Starting model
+```{r}
+model_full <- lm(carbon_footprint ~ annual_energy_consumption +
+                                   number_adults +
+                                   home_type,
+                 data = mydf_clean)
+
+summary(model_full)
+
+```
+
+# Reduced model
+```{r}
+model_reduced <- lm(carbon_footprint ~ annual_energy_consumption +
+                                      home_type,
+                    data = mydf_clean)
+
+summary(model_reduced)
+
+```
+
+# Diagnostics
+```{r}
+par(mfrow = c(2, 2))
+plot(model_reduced)
+
+```
+
+#Final model object
+```{r}
+model_final <- model_reduced
+
+```
+
+
+# 4. Modelling another dependent variable
+
+# Target variable checks
+```{r}
+table(mydf_clean$recycles_regularly)
+
+```
+# Data type enforcement
+```{r}
+mydf_clean$home_type <- as.factor(mydf_clean$home_type)
+mydf_clean$diet_type <- as.factor(mydf_clean$diet_type)
+
+```
+
+#Extra model interpretation support
+```{r}
+# Odds ratios with confidence intervals
+exp(cbind(OR = coef(recycle_model), confint(recycle_model)))
+
+```
+
+# Model performance checks
+```{r}
+p_hat <- predict(recycle_model, type = "response")
+pred_class <- ifelse(p_hat >= 0.5, 1, 0)
+
+table(Predicted = pred_class,
+      Actual = mydf_clean$recycles_regularly)
+
+mean(pred_class == mydf_clean$recycles_regularly)
+
+```
+
+
+
+# References  
+Logistic regression is widely used for modelling binary outcomes and estimating probabilities, as explained in Andy Field’s Discovering Statistics Using R.
+CS5702 Modern Data Book of Martin Shepperd
+Acknowledgement: An AI-based tool was used to assist with understanding and refining the R code used in this coursework.  

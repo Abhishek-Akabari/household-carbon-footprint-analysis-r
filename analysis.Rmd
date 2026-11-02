@@ -1,0 +1,254 @@
+---
+title: "Household Carbon Footprint Analysis"
+author: "Abhishek Akabari"
+---
+
+```{r}
+library(stringr)
+library(ggplot2)
+library(dplyr)
+
+```
+
+
+# 1. Organise and clean the data
+
+## 1.1 Subset the data into the specific dataset allocated
+ 
+```{r}
+# Only change the value for SID 
+# Assign your student id into the variable SID, for example:
+SID <- 2523424                 # This is an example, replace 2101234 with your actual ID
+SIDoffset <- (SID %% 50) + 1    # Your SID mod 50 + 1
+
+load("carbon-footprint.Rda")
+# Now subset the survey data set
+# Pick every 50th observation starting from your offset
+# Put into your data frame named mydf (you can rename it)
+mydf <- df[seq(from=SIDoffset,to=nrow(df),by=50),]
+```
+The given data set includes statistics on energy use, lifestyle traits, and estimated carbon footprint at the home level. To maintain reproducibility and avoid submission overlap, a deterministic subset of the data was generated using a student-specific offset in accordance with the evaluation guidelines. Carbon footprint is kept as the dependent variable for further analysis, and the sub-setting procedure maintains the original variable structure and metadata descriptions. The subsequent data quality evaluation, cleaning, and exploratory analysis all make consistent use of this subset.
+
+
+## 1.2 Data quality plan
+
+In order to guarantee that possible problems were found systematically rather than impulsively, a structured data quality strategy was created before cleaning. In order to verify predicted variables and suitable data types, the strategy started with structural validation against the given metadata. For numerical variables, range and logical consistency tests were subsequently established to find values that deviate from reasonable or acceptable bounds.
+
+With particular attention given to variables related to the dependent outcome, carbon footprint, missing values were assessed to determine their extent and whether their existence was compatible with the data set description. Frequency tables were used to plan the assessment of categorical data in order to identify inconsistent labelling, spelling inconsistencies, or formatting differences that could lead to an artificial inflation of category counts.
+
+Genuine data quality problems were to be limited to difficulties that represented errors or incorrect observations. Skewness and class imbalance are examples of distributional characteristics that were specifically left out of this classification since they can represent real-world behaviour rather than errors in the data. This strategy made sure that any cleaning decisions made later on were fair, reasonable, and transparent.
+
+## 1.3 Data quality findings
+
+### Issue 1: Invalid household adult counts.
+The number of adults in the household was reported to be 0 in a subset of data. Zero is an incorrect value since, according to the metadata, this variable specifies the number of adults per home. The validity of household-level analysis would be compromised if these records were kept.
+
+```{r}
+sum(mydf$number_adults == 0)
+
+```
+
+### Issue 2: Invalid energy consumption values.
+The annual energy usage variable showed negative values. These values show recording or entry problems because energy consumption cannot be negative, and if they were kept, they would skew studies of energy use and carbon footprint.
+
+```{r}
+mydf[mydf$annual_energy_consumption < 1000, ]
+
+```
+
+### Issue 3: Inconsistent categorical labelling.
+Variations in spelling and capitalisation were among the categorical variables that showed inconsistent categorisation. These discrepancies run the danger of distorting frequency-based summaries and comparisons by inflating the number of unique groups.
+
+```{r}
+table(mydf$home_type)
+
+```
+
+###Additional observation (not as a quality issue)
+The income variable had missing values (22 observations). However, this was not considered a data quality issue because income is not the dependent variable and its absence is possible in self-reported household data.
+
+```{r}
+colSums(is.na(mydf))
+
+```
+
+ 
+## 1.4 Data cleaning  
+
+### Addressing Issue 1
+Records reporting zero adults were removed from the dataset. Zero is an invalid observation because, according to the metadata, this variable represents the number of adults per home. Since assigning an adult count would create fake data, removal was preferred over imputation. Since these data do not represent legitimate families and would still compromise analytical validity, an alternate strategy of recording zero values to missing was taken into consideration but ultimately rejected.
+
+```{r}
+# Removing records with zero adults 
+mydf_clean <- mydf[mydf$number_adults > 0, ]
+
+```
+
+### Addressing Issue 2
+Since energy use cannot be negative and such numbers suggest recording or entry problems, observations with negative yearly energy consumption figures were eliminated. Summary statistics and modelling results would be distorted if these observations were kept. Since the amount of mistake is unclear and imputing energy values would inject unwarranted assumptions into the research, imputation was investigated but ultimately rejected.
+
+```{r}
+# Removing values under 1000
+mydf_clean <- mydf_clean[mydf_clean$annual_energy_consumption >= 1000, ]
+
+```
+
+### Addressing Issue 3
+To avoid false category duplication, categorical variables with incorrect spelling and capitalisation were standardised. Before factor conversion, values were trimmed for white space and transformed to a standard lowercase format. Since the problem is a representation variation rather than faulty data, eliminating these observations was inappropriate. Although automatic standardisation was chosen for consistency, manual recording of individual labels was also taken into consideration.
+
+```{r}
+# Correcting the spellings 
+mydf_clean$home_type <- mydf_clean$home_type |>
+  str_to_lower() |>
+  str_trim() |>
+  str_replace_all(c(
+    "detatched" = "Detached",
+    "detached" = "Detached",
+    "terrrace"  = "Terraced",
+    "terraced" = "Terraced",
+    "semi-Detached" = "Semi-detached",
+    "flat" = "Flat"
+  )) |>
+  factor()
+
+
+```
+
+# 2. Exploratory Data Analysis (EDA)
+
+Exploratory data analysis was conducted to examine the distribution of the dependent variable, carbon footprint, and to explore its relationships with selected household characteristics. The analysis focused on identifying distributional patterns and associations most relevant to explaining variation in carbon footprint, with particular emphasis on energy consumption and dwelling type. Both numerical and categorical variables were explored to support interpretation and inform subsequent modelling decisions.
+
+### Element 1
+
+```{r}
+hist(mydf_clean$carbon_footprint,
+     main = "Distribution of Carbon Footprint",
+     xlab = "Carbon Footprint",
+     col = "lightblue",
+     border = "white")
+
+
+```
+To understand the overall shape and variability of the carbon footprint, its distribution was analysed. With a greater range of values at higher carbon footprint levels, the histogram shows a distribution that is somewhat skewed to the right. This implies that a smaller percentage of homes generate higher emissions, even while the majority cluster around lower to mid-range emissions. This pattern is useful for modelling because it draws attention to the dependent variable's variability and indicates that measures of central tendency should be taken cautiously.
+
+### Element 2
+
+```{r}
+plot(mydf_clean$annual_energy_consumption,
+     mydf_clean$carbon_footprint,
+     xlab = "Annual Energy Consumption",
+     ylab = "Carbon Footprint")
+
+```
+The relationship between annual energy consumption and carbon footprint was examined to assess whether higher energy use is associated with increased emissions. The scatter plot indicates a clear positive association, with carbon footprint generally increasing as energy consumption rises. While the relationship appears broadly linear, there is noticeable variability around the trend, suggesting that additional household characteristics also influence carbon footprint. This pattern supports the inclusion of energy consumption as a key explanatory variable in subsequent modelling.
+
+### Element 3
+
+```{r}
+boxplot(carbon_footprint ~ home_type,
+        data = mydf_clean,
+        xlab = "Home Type",
+        ylab = "Carbon Footprint",
+        col = "lightgreen",
+        border = "black")
+
+
+```
+To determine whether building characteristics are linked to variations in household emissions, the carbon footprint of several home types was examined. Terraced residences have a higher central tendency than other types of homes, according to the boxplot, which shows difference in median carbon footprint between categories. Nonetheless, there is a significant overlap in distributions, indicating that although home type may influence variations in carbon footprint, it does not operate independently. This is in favour of using housing type as a category predictor instead of a primary explanatory factor.
+
+
+# 3. Modelling
+
+## 3.1 Explain your analysis
+
+Since the dependent variable is continuous and exploratory research revealed roughly linear connections with important variables, the investigation's goal was to model household carbon footprint using a multiple linear regression framework. Because of its interpretability and applicability for analysing the combined influence of household factors, linear regression was chosen.
+
+Because of its obvious positive correlation with carbon footprint, annual energy consumption was identified as a key explanatory variable based on the exploratory study. To account for the effects of home size, the number of adults was also taken into consideration. To reflect structural variations between homes seen during EDA, home type was added as a categorical predictor. Due to redundancy with the number of adults, variables like household size were removed.
+
+After the development of an initial comprehensive model that included every potential predictor, a gradual reduction process was carried out under the direction of statistical significance and model diagnostics. To increase parsimony without sacrificing interpretability, variables that did not significantly affect model fit were eliminated.
+
+Moderate residual variability and possible heteroscedasticity at higher energy consumption levels were among the model's shortcomings. Diagnostic plots were used to evaluate these, and the results were interpreted cautiously, taking into account the possibility of additional unobserved factors influencing carbon footprint.
+
+
+
+## 3.2 Provide a model for carbon_footprint.
+
+### Initial Model
+
+```{r}
+model_initial <- lm(carbon_footprint ~ annual_energy_consumption +
+                                      number_adults +
+                                      home_type,
+                    data = mydf_clean)
+
+summary(model_initial)
+
+```
+
+### Proposed model
+
+```{r}
+model_proposed <- lm(carbon_footprint ~ annual_energy_consumption +
+                                       home_type,
+                     data = mydf_clean)
+
+summary(model_proposed)
+
+```
+
+### Proposed model diagnostics
+```{r}
+par(mfrow = c(2, 2))
+plot(model_proposed)
+
+```
+
+### Proposed model intepretation
+
+Considering residuals centred around zero and lacking systematic patterns, diagnostic charts show that the linearity condition is largely met. Despite minor variations in the upper tail, the Q-Q plot indicates that the residuals are roughly normal. At higher fitted values, the scale-location plot shows some heteroscedasticity, indicating that variance is not totally constant. Cook's distance limits are not exceeded by any observations in residuals against leverage plots, suggesting the lack of unduly influencing points. For interpretive purposes, the diagnostics generally indicate that the model assumptions are fairly met.
+
+
+# 4. Model the likelihood of being a household that regularly recycles.
+
+Method and approach
+Since the outcome variable is binary, logistic regression was used to model the chance of a home recycling on a regular basis. Because it is suitable for predicting probabilities and makes it easy to understand how household characteristics are related to the possibility of recycling, logistic regression was chosen. This method, which is appropriate given the behavioural character of the result, concentrates on finding significant connections rather than just prediction accuracy.
+
+Explanatory variables
+Conceptual relevance and knowledge from previous exploratory study were taken into consideration while choosing explanatory variables. The number of persons and annual energy use were included to reflect household size and activity levels, which may have an impact on recycling and garbage production. In order to account for structural variations among homes that can impact access to recycling facilities, home type was included. One lifestyle indicator that may be linked to environmental consciousness and pro-environmental behaviour is diet type. The variables were selected to prevent repetition found in previous sections while striking a balance between interpretability and importance.
+
+Model selection approach
+To evaluate the combined impact of household factors on recycling behaviour, a single multivariable logistic regression model was suggested. Given the data size and the lack of compelling theoretical support for intricate model structures, this strategy prioritised interpretability and decreased the risk of overfitting. Because behavioural outcomes frequently show diffuse and overlapping influences, predictors were kept where theoretically significant, even when individual coefficients were not statistically dominant.
+
+Model weaknesses and limitations
+There are a few restrictions to be aware of. Unobserved elements that are not included in the dataset, such as local infrastructure, education, or governmental incentives, may have an impact on recycling behaviour. Furthermore, logistic regression may oversimplify intricate behavioural processes by assuming linear connections between variables and the log-odds of the result. Classification performance may also be impacted by potential class imbalance. These constraints were addressed by avoiding causative claims, interpreting results cautiously, and concentrating on overarching patterns rather than the significance of individual coefficients.
+
+### Proposed Model
+
+```{r}
+recycle_model <- glm(recycles_regularly ~ annual_energy_consumption +
+                                           number_adults +
+                                           home_type +
+                                           diet_type,
+                     data = mydf_clean,
+                     family = binomial)
+
+summary(recycle_model)
+
+```
+
+### Model intepretation
+According to odds ratios, there is no significant correlation between any of the household characteristics under investigation and the probability of recycling on a regular basis. The odds ratios for home size and annual energy usage are near to one, indicating no impact on recycling habit. When other factors are taken into account, the differences between different types of homes are tiny and inconsistent, suggesting limited structural effects. Vegetarian and pescatarian households had comparatively higher chances for diet type, which may represent lifestyle differences connected to environmental consciousness. Nevertheless, these effects are highly ambiguous and should be interpreted with caution. Overall, the findings lend credence to the idea that a number of weakly acting factors rather than a single strong predictor impact recycling habit.
+```{r}
+exp(coef(recycle_model))
+
+```
+
+
+
+# References  
+
+Logistic regression is widely used for modelling binary outcomes and estimating probabilities, as explained in Andy Field’s Discovering Statistics Using R.
+CS5702 Modern Data Book of Martin Shepperd
+Acknowledgement: An AI-based tool was used to assist with understanding and refining the R code used in this coursework.
+
+   
